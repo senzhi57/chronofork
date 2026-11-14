@@ -1,0 +1,52 @@
+[
+  {
+    "event_id": "evt_001",
+    "operation_id": "order_create_001",
+    "timestamp": "2026-11-13T10:00:00Z",
+    "sequence": 1,
+    "entity_id": "order_001",
+    "event_type": "ORDER_CREATED",
+    "source": "order-service",
+    "payload": {
+      "customer_id": "customer_001"
+    }
+  },
+  {
+    "event_id": "evt_002",
+    "operation_id": "payment_123",
+    "timestamp": "2026-11-13T10:01:00Z",
+    "sequence": 2,
+    "entity_id": "order_001",
+    "event_type": "PAYMENT_AUTHORIZED",
+    "source": "payment-service",
+    "payload": {
+      "amount": 50000,
+      "currency": "INR"
+    }
+  },
+  {
+    "event_id": "evt_003",
+    "operation_id": "payment_123",
+    "timestamp": "2026-11-13T10:02:00Z",
+    "sequence": 3,
+    "entity_id": "order_001",
+    "event_type": "PAYMENT_AUTHORIZED",
+    "source": "payment-service",
+    "payload": {
+      "amount": 50000,
+      "currency": "INR"
+    }
+  },
+  {
+    "event_id": "evt_004",
+    "operation_id": "inventory_001",
+    "timestamp": "2026-11-13T10:03:00Z",
+    "sequence": 4,
+    "entity_id": "order_001",
+    "event_type": "INVENTORY_RESERVED",
+    "source": "inventory-service",
+    "payload": {
+      "quantity": 1
+    }
+  }
+]

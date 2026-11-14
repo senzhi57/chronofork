@@ -1,0 +1,21 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.2, pytest-9.2.0, pluggy-1.7.0
+rootdir: /workspaces/chronofork
+plugins: platformdirs-4.14.0, anyio-4.15.1
+collected 0 items / 1 error
+
+==================================== ERRORS ====================================
+____________________ ERROR collecting tests/test_replay.py _____________________
+ImportError while importing test module '/workspaces/chronofork/tests/test_replay.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/python/3.14.2/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_replay.py:4: in <module>
+    from engine.schema import Event
+E   ModuleNotFoundError: No module named 'engine'
+=========================== short test summary info ============================
+ERROR tests/test_replay.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+=============================== 1 error in 0.17s ===============================
