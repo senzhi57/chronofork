@@ -1,0 +1,260 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "# ChronoFork — Counterfactual Event Replay Demo\n",
+        "\n",
+        "**Replay the Past. Fork the Future.**\n",
+        "\n",
+        "This notebook demonstrates ChronoFork's actual replay engine using the repository's `sample_data/duplicate_payment.json` dataset. It compares strict replay with an idempotent counterfactual replay.\n",
+        "\n",
+        "> **Safety note:** The payment values are synthetic demo data. This notebook does not initiate or process real payments.\n",
+        "\n",
+        "## What you will do\n",
+        "1. Load and inspect the sample event history.\n",
+        "2. Run the baseline using the `strict` policy.\n",
+        "3. Inspect the duplicate-operation anomaly.\n",
+        "4. Run the alternative timeline using the `idempotent` policy.\n",
+        "5. Compare both outcomes using ChronoFork's comparison function.\n",
+        "\n",
+        "Run this notebook from the repository root, or place it in the repository's `notebooks/` directory."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 1. Environment and imports\n",
+        "\n",
+        "The replay engine uses Python standard-library modules. The notebook imports the project's own engine functions; it does not reimplement the replay logic."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "from pathlib import Path\n",
+        "import json\n",
+        "import sys\n",
+        "from pprint import pprint\n",
+        "\n",
+        "# Find the repository root whether this notebook is in the root or notebooks/.\n",
+        "CANDIDATE_ROOTS = [Path.cwd(), Path.cwd().parent]\n",
+        "REPO_ROOT = next((p for p in CANDIDATE_ROOTS if (p / 'engine').is_dir()), None)\n",
+        "if REPO_ROOT is None:\n",
+        "    raise FileNotFoundError('Could not find the ChronoFork repository. Open this notebook from the repo root or notebooks/ folder.')\n",
+        "\n",
+        "if str(REPO_ROOT) not in sys.path:\n",
+        "    sys.path.insert(0, str(REPO_ROOT))\n",
+        "\n",
+        "from engine.replay import replay_events\n",
+        "from engine.branches import run_counterfactual\n",
+        "from engine.compare import compare_results\n",
+        "\n",
+        "DATASET_PATH = REPO_ROOT / 'sample_data' / 'duplicate_payment.json'\n",
+        "print(f'Repository: {REPO_ROOT}')\n",
+        "print(f'Dataset: {DATASET_PATH}')"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 2. Load the event history\n",
+        "\n",
+        "Each event includes an event ID, logical operation ID, timestamp, sequence, entity, event type, source, and payload. The two payment events share the same `operation_id` (`payment_123`), which represents duplicate delivery of one logical payment operation."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "with DATASET_PATH.open('r', encoding='utf-8') as file:\n",
+        "    events = json.load(file)\n",
+        "\n",
+        "print(f'Events loaded: {len(events)}')\n",
+        "for event in events:\n",
+        "    print(\n",
+        "        f\"seq={event['sequence']} | event={event['event_id']} | \"\n",
+        "        f\"type={event['event_type']} | operation={event['operation_id']}\"\n",
+        "    )"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 3. Run the baseline replay (strict policy)\n",
+        "\n",
+        "ChronoFork's `strict` policy applies repeated logical operations but records a `DUPLICATE_OPERATION` anomaly. This makes the impact of duplicate delivery visible in the resulting state."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "baseline = replay_events(events, policy='strict')\n",
+        "baseline_state = baseline['final_state']\n",
+        "\n",
+        "print('Baseline policy:', baseline['policy'])\n",
+        "print('Events processed:', baseline['events_processed'])\n",
+        "print('Authorized amount: ₹{:,.0f}'.format(baseline_state['authorized_amount']))\n",
+        "print('Anomaly count:', baseline['anomaly_count'])\n",
+        "print('Final status:', baseline_state['status'])"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 4. Inspect duplicate-operation anomalies\n",
+        "\n",
+        "The reducer detects a repeated `operation_id`. Under strict replay it still applies the event, while recording the anomaly in the state."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "anomalies = baseline_state['anomalies']\n",
+        "print(f'Detected anomalies: {len(anomalies)}')\n",
+        "for index, anomaly in enumerate(anomalies, start=1):\n",
+        "    print(f\"\\nAnomaly {index}\")\n",
+        "    print('Type:', anomaly['type'])\n",
+        "    print('Event ID:', anomaly['event_id'])\n",
+        "    print('Operation ID:', anomaly['operation_id'])\n",
+        "    print('Details:', anomaly['message'])"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 5. Fork an idempotent counterfactual timeline\n",
+        "\n",
+        "The counterfactual branch replays the same original event history using the `idempotent` policy. The reducer recognizes that `payment_123` was already processed and skips the second state change. No mutation is required for this sample because the duplicate is already present in the source history."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "branch_result = run_counterfactual(\n",
+        "    raw_events=events,\n",
+        "    mutations=[],\n",
+        "    branch_policy='idempotent'\n",
+        ")\n",
+        "\n",
+        "counterfactual = branch_result['counterfactual']\n",
+        "counterfactual_state = counterfactual['final_state']\n",
+        "\n",
+        "print('Counterfactual policy:', counterfactual['counterfactual' if 'counterfactual' in branch_result else 'baseline']['policy'] if False else counterfactual['policy'])\n",
+        "print('Events processed:', counterfactual['events_processed'])\n",
+        "print('Authorized amount: ₹{:,.0f}'.format(counterfactual_state['authorized_amount']))\n",
+        "print('Anomaly count:', counterfactual['anomaly_count'])\n",
+        "print('Final status:', counterfactual_state['status'])"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 6. Compare the two outcomes\n",
+        "\n",
+        "Use ChronoFork's `compare_results` function to calculate the state differences between the baseline and counterfactual executions."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "comparison = compare_results(baseline, counterfactual)\n",
+        "\n",
+        "print('Baseline authorized amount:       ₹{:,.0f}'.format(baseline_state['authorized_amount']))\n",
+        "print('Counterfactual authorized amount:  ₹{:,.0f}'.format(counterfactual_state['authorized_amount']))\n",
+        "print('Counterfactual minus baseline:     ₹{:,.0f}'.format(comparison['authorized_amount_difference']))\n",
+        "print('Baseline anomalies:', comparison['baseline_anomalies'])\n",
+        "print('Counterfactual anomalies:', comparison['counterfactual_anomalies'])\n",
+        "print('Outcome changed:', comparison['outcome_changed'])\n",
+        "print('\\nState differences:')\n",
+        "pprint(comparison['differences'])"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 7. Validate the demonstration\n",
+        "\n",
+        "These assertions check the actual sample dataset and current engine behavior. If the project logic or sample data changes, the assertions will help identify a changed result rather than silently displaying an outdated claim."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "assert len(events) == 4, f'Expected 4 sample events, got {len(events)}'\n",
+        "assert baseline_state['authorized_amount'] == 100000, baseline_state['authorized_amount']\n",
+        "assert counterfactual_state['authorized_amount'] == 50000, counterfactual_state['authorized_amount']\n",
+        "assert baseline['anomaly_count'] == 1, baseline['anomaly_count']\n",
+        "assert counterfactual['anomaly_count'] == 1, counterfactual['anomaly_count']\n",
+        "assert comparison['authorized_amount_difference'] == -50000\n",
+        "assert comparison['outcome_changed'] is True\n",
+        "\n",
+        "print('All ChronoFork demo checks passed.')\n",
+        "print('Baseline: ₹{:,.0f}'.format(baseline_state['authorized_amount']))\n",
+        "print('Counterfactual: ₹{:,.0f}'.format(counterfactual_state['authorized_amount']))"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 8. Interpretation and takeaway\n",
+        "\n",
+        "- The strict baseline applies both `PAYMENT_AUTHORIZED` events because they share the same logical operation ID. The resulting authorized amount is **₹1,00,000**.\n",
+        "- The replay engine records a `DUPLICATE_OPERATION` anomaly for the repeated operation.\n",
+        "- The idempotent counterfactual recognizes the repeated operation and skips its second state change. The resulting authorized amount is **₹50,000**.\n",
+        "- The counterfactual branch still reports the duplicate anomaly: idempotency prevents the duplicate state change, but does not erase the evidence that a duplicate event was received.\n",
+        "\n",
+        "**Conclusion:** ChronoFork makes it possible to replay an event history, inspect duplicate-operation anomalies, and compare an alternative idempotent execution without changing the original input history.\n",
+        "\n",
+        "### Project references\n",
+        "- Repository: https://github.com/senzhi57/chronofork\n",
+        "- Core implementation: `engine/replay.py`, `engine/reducer.py`, `engine/branches.py`, and `engine/compare.py`\n",
+        "- Sample data: `sample_data/duplicate_payment.json`\n",
+        "\n",
+        "**Note:** This notebook demonstrates the local Python replay engine. It does not by itself demonstrate or prove any AWS service integration."
+      ]
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "display_name": "Python 3",
+      "language": "python",
+      "name": "python3"
+    },
+    "language_info": {
+      "name": "python",
+      "version": "3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}
